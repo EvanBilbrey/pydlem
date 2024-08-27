@@ -1,0 +1,4 @@
+[DB]
+lake_coords = "SELECT permanent_ AS 'nhd_id', gnis_name, AsText(Centroid(Geometry)) AS 'coordinates' FROM reservoirs;"
+curves = "SELECT volume, area FROM StorageCurves WHERE nhd_id = ?;"
+
