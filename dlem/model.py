@@ -2,6 +2,8 @@ from pathlib import Path
 import xarray as xr
 import warnings
 import numpy as np
+from scipy.interpolate import RegularGridInterpolator
+from tqdm import tqdm
 
 
 from dlem.functions import latent_heat_vaporization, psychrometric_const, altitude_adjusted_atmp
@@ -44,14 +46,14 @@ class CreateModel:
         #   and have a 1-day burn in.
         dataset = self.inputs.sel(time=slice(start, end))
 
-        ### Check Inputs and Formatting
+        # Check Inputs and Formatting
         # check for long-wave radiation input
         if 'lrad' in list(dataset.keys()):
             lrad = True
         else:
             lrad = False
 
-        ### Perform Pre-Calculations if necessary
+        # Perform Pre-Calculations if necessary
         ta = ((dataset.min_temp + dataset.max_temp) / 2) - 273.15
         depth = dataset.LakeDepth
         area = dataset.LakeArea
@@ -66,39 +68,48 @@ class CreateModel:
         ta_nan = np.isnan(ta)
         if np.count_nonzero(ta_nan) > 0:
             warnings.warn(
-                "There are missing TEMPERATURE values for the run time period, missing values will be propogated to the model outputs.")
+                "There are missing TEMPERATURE values for the run time period, missing"
+                " values will be propogated to the model outputs.")
         depth_nan = np.isnan(depth)
         if np.count_nonzero(depth_nan) > 0:
             warnings.warn(
-                "There are missing LAKE DEPTH values for the run time period, missing values will be propogated to the model outputs.")
+                "There are missing LAKE DEPTH values for the run time period, missing "
+                "values will be propogated to the model outputs.")
         area_nan = np.isnan(area)
         if np.count_nonzero(area_nan) > 0:
             warnings.warn(
-                "There are missing LAKE AREA values for the run time period, missing values will be propogated to the model outputs.")
+                "There are missing LAKE AREA values for the run time period, missing "
+                "values will be propogated to the model outputs.")
         fch_nan = np.isnan(fch)
         if np.count_nonzero(fch_nan) > 0:
             warnings.warn(
-                "There are missing FETCH values for the run time period, missing values will be propogated to the model outputs.")
+                "There are missing FETCH values for the run time period, missing "
+                "values will be propogated to the model outputs.")
         ut_nan = np.isnan(ut)
         if np.count_nonzero(ut_nan) > 0:
             warnings.warn(
-                "There are missing WIND SPEED values for the run time period, missing values will be propogated to the model outputs.")
+                "There are missing WIND SPEED values for the run time period, missing "
+                "values will be propogated to the model outputs.")
         vpd_nan = np.isnan(vpd)
         if np.count_nonzero(vpd_nan) > 0:
             warnings.warn(
-                "There are missing VAPOR PRESSURE DEFICIT values for the run time period, missing values will be propogated to the model outputs.")
+                "There are missing VAPOR PRESSURE DEFICIT values for the run time period, missing "
+                "values will be propogated to the model outputs.")
         srad_nan = np.isnan(srad)
         if np.count_nonzero(srad_nan) > 0:
             warnings.warn(
-                "There are missing SHORTWAVE RADIATION values for the run time period, missing values will be propogated to the model outputs.")
+                "There are missing SHORTWAVE RADIATION values for the run time period, missing "
+                "values will be propogated to the model outputs.")
         lat_nan = np.isnan(lat)
         if np.count_nonzero(lat_nan) > 0:
             warnings.warn(
-                "There are missing LATITUDE values for some locations, this will result in no value outputs for locations missing latitude.")
+                "There are missing LATITUDE values for some locations, this will result in "
+                "no value outputs for locations missing latitude.")
         elev_nan = np.isnan(elev)
         if np.count_nonzero(elev_nan) > 0:
             warnings.warn(
-                "There are missing ELEVATION values for some locations, this will result in no value outputs for locations missing elevation.")
+                "There are missing ELEVATION values for some locations, this will result in "
+                "no value outputs for locations missing elevation.")
 
         ierr = np.zeros((ta.shape))
         ierr = np.where(depth <= 0, 2, ierr)
@@ -136,18 +147,18 @@ class CreateModel:
         ########################### Calculate water equilibrium temperature ##########################
         ##############################################################################################
 
-        ## some variables
+        # some variables
         alambda = latent_heat_vaporization(ta)
         atmp = altitude_adjusted_atmp(ta, ta.elev.values[None, :])
         gamma = psychrometric_const(atmp, alambda)
         # airds = airdens(ta, elev)
 
-        ## slope of the saturation water vapour curve at the temperatures (kPa deg C-1)
+        # slope of the saturation water vapour curve at the temperatures (kPa deg C-1)
         deltaa = calc_slope_swv_curve(ta)
         deltawb = calc_slope_swv_curve(twb)
 
-        ## Emissvity of air and water (unitless)
-        sradj = srad * 0.0864  ## convert from W m-2 to MJ m-2 d-1
+        # Emissvity of air and water (unitless)
+        sradj = srad * 0.0864  # convert from W m-2 to MJ m-2 d-1
 
         fcd = cloud_factor(sradj, lat, elev)
         em_a = 1.08 * (1.0 - np.exp(-np.power(ea * 10.0, (ta + absolute_zero['value']) / 2016.0))) * (
@@ -156,14 +167,14 @@ class CreateModel:
 
         # lradj = em_a * sigma * pow((ta + T_abs), 4.) if lrad == -9999 else lrad * 0.0864
         if lrad:
-            lradj = lrad * 0.0864  ## convert from W m-2 to MJ m-2 d-1
+            lradj = lrad * 0.0864  # convert from W m-2 to MJ m-2 d-1
         else:
             lradj = em_a * stefan_boltzman['value'] * np.power((ta + absolute_zero['value']), 4.0)
 
-        ## wind function using the method of McJannet, 2012 (MJ m-2 d-1 kPa-1)
+        # wind function using the method of McJannet, 2012 (MJ m-2 d-1 kPa-1)
         windf = (2.33 + 1.65 * ut) * np.power(fch, -0.1) * alambda
 
-        ## calculate equilibrium temperature of the water body (C) Zhao and Gao */
+        # calculate equilibrium temperature of the water body (C) Zhao and Gao */
         te = ((0.46 * em_a + windf * (deltaa + gamma)) * ta + (1.0 - water_albedo['value']) * sradj - 28.38 * (
                     em_w - em_a) - windf * vpd) \
              / (0.46 * em_w + windf * (deltaa + gamma))
@@ -172,12 +183,12 @@ class CreateModel:
         ############################## Calculate water column temperature #############################
         ###############################################################################################
 
-        ## time constant (d)
+        # time constant (d)
         tau = (water_density['value'] * specificheat_water['value'] * depth) / (
                     4.0 * stefan_boltzman['value'] * np.power((twb + absolute_zero['value']), 3.0) + windf * (
                         deltawb + gamma))
 
-        ## water column temperature (deg. C)
+        # water column temperature (deg. C)
         # get initial tw0 if no missing values
         if (np.count_nonzero(np.isnan(te)) == 0) and (np.count_nonzero(np.isnan(tau)) == 0):
             ixl, iyl = te.values.shape
@@ -186,8 +197,7 @@ class CreateModel:
             interp = RegularGridInterpolator((ix, iy), te.values, bounds_error=False, fill_value=None)
             tw0 = interp((ix[0] - 1, iy))
 
-            tw0_tmstmp = []
-            tw0_tmstmp.append(tw0)
+            tw0_tmstmp = [tw0]
             htstrg = []
             for row in range(te.values.shape[0]):
                 tw = te.values[row] + (tw0_tmstmp[row] - te.values[row]) * np.exp(
@@ -201,7 +211,8 @@ class CreateModel:
         # get initial tw0 if missing values
         else:
             warnings.warn(
-                "Missing values detected, this may lead to unequal length columns. Heat Storage calculation will use a slower method.")
+                "Missing values detected, this may lead to unequal length columns. "
+                "Heat Storage calculation will use a slower method.")
             interp_te = []
             interp_tau = []
             for c in range(te.values.shape[1]):
@@ -222,9 +233,8 @@ class CreateModel:
             tw0 = te_intrp[0]
             te_intrp = np.delete(te_intrp, 0, axis=0)
 
-            ## change in heat storage (MJ m-2 d-1)
-            tw0_tmstmp = []
-            tw0_tmstmp.append(tw0)
+            # change in heat storage (MJ m-2 d-1)
+            tw0_tmstmp = [tw0]
             htstrg = []
             for row in range(te_intrp.shape[0]):
                 tw = te_intrp[row] + (tw0_tmstmp[row] - te_intrp[row]) * np.exp(-timestep['value'] / tau_intrp[row])
@@ -239,7 +249,7 @@ class CreateModel:
         ################################### Calculate the evaporation ##################################
         ################################################################################################
 
-        ## calculate the Penman evaporation
+        # calculate the Penman evaporation
         rn = sradj * (1. - water_albedo['value']) + lradj - em_w * (
                     stefan_boltzman['value'] * np.power((ta + absolute_zero['value']), 4.))
 
@@ -266,6 +276,7 @@ class CreateModel:
     def save_outputs(self, filepath):
         self.outputs.to_netcdf(filepath)
 
+
 def simulate_ice(airtemp, depth):
     """
     Function to determine ice on/ice off (ice phenology) of lakes. Based on Zhao et al. (2022) empirical
@@ -277,13 +288,14 @@ def simulate_ice(airtemp, depth):
     """
     # find sign of temp values, above or below freezing
     asign = np.sign(airtemp.values)
-    # identify where there are temp reversals (i.e., change from negative to positive and vice versa) > 0 is from freezing to thaw, < 0 is thaw to freezing
+    # identify where there are temp reversals (i.e., change from negative to positive and vice versa) > 0 is
+    # from freezing to thaw, < 0 is thaw to freezing
     schng = asign - np.roll(asign, 1, axis=0)
     schng[0] = 0
-    # make empty freeze array (1 is ice, 0 is no ice, -3 is freeze lag, 3 is thaw lag)
+    # make empty freeze array
     fz_arr = np.zeros(schng.shape)
     lags_arr = np.zeros(schng.shape)
-    # get indexes of temp reversals
+    # get indexes of temp reversal
     revsi, revsj = np.nonzero(schng)
     # calc seasonal depths for dealing with potential nans
     dseas = depth.groupby("time.season").mean('time')
@@ -374,6 +386,7 @@ def simulate_ice(airtemp, depth):
     frz_ds = frz_ds.drop_vars(['AirTemp'])
 
     return frz_ds
+
 
 # Default behavior create input datafile from gridmet given static reservoir variables and gridmet POR
 if __name__ == '__main__':
