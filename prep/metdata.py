@@ -130,6 +130,8 @@ def get_gridmet_at_points(in_geom,
             vsm_d = pd.concat(vsm)
             vpdm_d = pd.concat(vpdm)
 
+            # TODO - use appropriate spatial summary statistics in the future, not just average over the input polygon
+            #   but area weighted volume/cumulative total for precip/solar radiation (could derive from GRIDtools package)
             pr.append(prm_d.groupby(prm_d.index).mean())
             srad.append(sradm_d.groupby(sradm_d.index).mean())
             th.append(thm_d.groupby(thm_d.index).mean())

@@ -48,18 +48,20 @@ class CreateInputFile:
 #   static requires constant storage value, dynamic requires eac-curve.
     def __init__(
             self,
-            coords: Union[gpd.GeoDataFrame, None],
+            geoms: Union[gpd.GeoDataFrame, None],
+            index_col: Union[str, None],
             lake_area: Union[np.array, pd.Series],
             lake_depth: Union[np.array, pd.Series],
             met_data: Union[xr.Dataset, None] = None,
             met_source = 'gridmet'):
 
-        self.data = self._create_metinputs(coords, met_data, met_source)
+        self.data = self._create_metinputs(geoms, index_col, met_data, met_source)
         self.add_variable(lake_area, "LakeArea", var_attrs={'standard_name': 'Lake Surface Area', 'units': 'km^2'})
         self.add_variable(lake_depth, 'LakeDepth', var_attrs={'standard_name': 'Average Lake Depth', 'units': 'm'})
 
     def _create_metinputs(self,
-                          coords: gpd.GeoDataFrame,
+                          geoms: gpd.GeoDataFrame,
+                          index_col: Union[str, None],
                           met_data: Union[xr.Dataset, None] = None,
                           met_source: str = 'gridmet') -> xr.Dataset:
         """
@@ -68,11 +70,13 @@ class CreateInputFile:
 
         Valid met_source = ['gridmet', 'daymet', 'from_file']
 
-        :param coords: A geodataframe containing location IDs in column[0] and a geometry column of point locations
-        :param met_data: An xarray dataset pre-formatted as discrete sampling locations netcdf
-        :param met_source: str - a string representing the source of meteorology data to use
-        include
-        :return: xarray.DataSet with meteorology variables necessary for Penman Equation for each coordinate location
+        :param geoms: geopandas.GeoDataFrame - geometries where meteorology data will be extracted.
+        :param met_data: xarray.Dataset or None(default) - Pre-formatted as discrete sampling locations netcdf with dims
+            (time, location) for each variable. Must also contain coordinate
+            vars ["lat", "lon", "elev", "location", "time"].
+        :param met_source: str - a string representing the source of meteorology data to use include
+        :return: xarray.DataSet with meteorology variables necessary for Penman Equation calculations at each geometry
+            location in geoms.
         """
 
         if met_source == 'from_file':
@@ -82,17 +86,13 @@ class CreateInputFile:
                 metinputs = met_data
 
         elif met_source == 'gridmet':
-            coordinates = list(zip(coords.geometry.x.to_list(), coords.geometry.y.to_list()))
-            # TODO - provide way to get ids associated with the points and if these aren't provided, default to the
-            #   dataframe index
-            loc_ids = coords.iloc[:,0].to_list()
-            metinputs = get_gridmet_at_points(coordinates, loc_ids)
+            # This is where the addition of start, end dates could be added to provide an alternative to the default
+            #   behavior of the met_source = 'gridmet' of downloading the entire GridMET POR.
+            metinputs = get_gridmet_at_points(geoms, index_col)
 
         elif met_source == 'daymet':
             print("Sorry, daymet is not yet available. Defaulting to gridment source.")
-            coordinates = list(zip(coords.geometry.x.to_list(), coords.geometry.y.to_list()))
-            loc_ids = coords.iloc[:,0].to_list()
-            metinputs = get_gridmet_at_points(coordinates, loc_ids)
+            metinputs = get_gridmet_at_points(geoms, index_col)
 
         else:
             raise ValueError("Meteorology source is invalid. Valid entries:{0}".format(MET_SOURCES))
@@ -101,7 +101,7 @@ class CreateInputFile:
 
     def add_variable(self, data, variable_name, var_attrs=None):
         """
-        Function to add a variable to the inputs dataset. Only accepts one variable at a time.
+        Function to add a variable to an existing input dataset. Only accepts one variable at a time.
         :param data: pd.Series, pd.DataFrame, xr.DataArray, xr.Dataset - pandas objects must be formatted with
         multiindex levels = [time, location] where location index matches those of the class.data object's location ids.
         Time must be datetime64[ns]. Can also be xarray object formatted identical to the class.data object.
@@ -112,6 +112,12 @@ class CreateInputFile:
         (usually at minimum includes 'standard_name' and 'units')
         :return: None - updates class data object with new variable
         """
+        accepted_vars = ['precip', 'min_temp', 'max_temp', 'mean_temp' 'solrad', 'min_rh', 'max_rh', 'mean_rh', 'dew_temp',
+         'wind_dir', 'wind_vel', 'LakeArea', 'LakeDepth', 'vpd']
+        if variable_name not in accepted_vars:
+            raise ValueError("Variable name not compatible, select from: ['precip', 'min_temp', 'max_temp',"
+                             " 'mean_temp' 'solrad', 'min_rh', 'max_rh', 'mean_rh', 'dew_temp','wind_dir',"
+                             " 'wind_vel', 'LakeArea', 'LakeDepth', 'vpd']")
 
         if isinstance(data, pd.DataFrame):
             data.index.names = ['time', 'location']
