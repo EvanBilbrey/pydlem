@@ -20,54 +20,56 @@ from config import GRIDMET_PARAMS
 DEFAULT_DATES = ('1979-01-01', (datetime.today() - timedelta(days=2)).strftime("%Y-%m-%d"))
 
 
-def get_gridmet_at_points(coords,
-                          loc_ids,
+def get_gridmet_at_points(in_geom,
+                          gdf_index_col=None,
                           start = DEFAULT_DATES[0],
                           end = DEFAULT_DATES[1],
                           crs = 4326) -> xr.Dataset:
     """
-    Function takes a list of GridMET data parameters, start date, end date, and list of point coordinates
-    and returns a discrete station formatted xarray dataset.
-    :param params: the GridMET variables to download
+    Function takes a list of GridMET data parameters, start date, end date, and a Geopandas GeoDataFrame of point or
+    polygon geometries and returns a discrete station formatted xarray dataset of necessary GridMET data to run pydlem
+    for each point geometry or averaged over each polygon geometry.
+    :param in_geom: geopandas.GeoDataFrame - contains geometry
+    :param gdf_index_col: str - name of column in GeoDataFrame to use as a unique identifier for each geometry
+        default is None, in which case the index will be used
     :param start: str "%Y-%m-%d" - Starting date of data extraction period
     :param end: str "%Y-%m-%d" = Ending date of data extraction period
-    :param coords: list[tuple] - list of lat, lon coordinates where data will be extracted
-    :return: an xarray dataset for discrete points (stations)
+    :param crs: int or str - EPSG code for crs, default is 4326
+    :return: an xarray dataset for discrete locations (stations)
     """
-
-    if isinstance(coords, list):
-        coords = coords
+    if gdf_index_col is not None:
+        ixcol = gdf_index_col
     else:
-        coords = [coords]
+        in_geom['ixcol'] = in_geom.index
+        ixcol = 'ixcol'
 
-    if isinstance(loc_ids, list):
-        location_ids = loc_ids
+    location_ids = in_geom[ixcol].to_list()
+
+    if (in_geom.geometry.geom_type == 'Point').all():
+        coords = list(zip(in_geom.geometry.x, in_geom.geometry.y))
+    elif (in_geom.geometry.geom_type == 'Polygon').all():
+        coords = list(zip(in_geom.geometry.centroid.x, in_geom.geometry.centroid.y))
     else:
-        location_ids = [loc_ids]
+        coords = None
+        raise ValueError("Mixed geometry types were found in the input GeoDataFrame. Mixed Geometry is not supported.")
 
     loc_lat = []
     loc_lon = []
-    loc_elev = py3dep.elevation_bycoords(coords, crs=crs)
+    loc_elev = py3dep.elevation_bycoords(coords, crs=crs)  # only 4326 or NAD83 works with py3dep
 
     if isinstance(loc_elev, list):
         loc_elev = loc_elev
     else:
         loc_elev = [loc_elev]
 
-    pnts = [Point(list(p)) for p in coords]
-    pnt_gdf = gpd.GeoDataFrame({
-        'pnt_id': location_ids,
-        'geometry': pnts
-    }, crs=crs)
+    loc_gdf = in_geom[['{0}'.format(ixcol), 'geometry']]
 
     print("Retrieving GridMET cells...")
-    gmt_cells = get_gridmet_cells(pnt_gdf)
-    idx = [gmt_cells['pnt_id'].to_list().index(i) for i in location_ids]
-    cellids = [gmt_cells['cell_id'].to_list()[i] for i in idx]
-    unq_cells = np.unique(np.array(cellids))
-    print("{0} unique GridMET cells found for {0} input points.".format(len(unq_cells), len(location_ids)))
+    gmt_cells = get_gridmet_cells(loc_gdf)
+    unq_cells = gmt_cells['cell_id'].unique()
+    print("{0} unique GridMET cells found for {1} input features.".format(len(unq_cells), len(loc_gdf[ixcol])))
 
-    gmt_cntrs = gmt_cells.centroid
+    gmt_cntrs = gmt_cells.drop_duplicates(subset='cell_id').centroid
 
     pr = []
     srad = []
@@ -80,8 +82,8 @@ def get_gridmet_at_points(coords,
     cdsets = {}
     print("Fetching GridMET data for unique cells...")
     for cell in tqdm(unq_cells, desc='Cells'):
-        clon = gmt_cntrs.iloc[cellids.index(cell)].x
-        clat = gmt_cntrs.iloc[cellids.index(cell)].y
+        clon = gmt_cntrs[cell].x
+        clat = gmt_cntrs[cell].y
         datasets = []
         for p in GRIDMET_PARAMS:
             s = start
@@ -90,22 +92,61 @@ def get_gridmet_at_points(coords,
             datasets.append(ds)
         cdsets[cell] = datasets
 
-    for i in range(len(coords)):
+    for i in range(len(coords)):  ## left off here, need to then allocate unique cells back to geoms, average if polygon
         c = coords[i]
-        gmtcell_id = cellids[i]
+        loc = location_ids[i]
+        gmtcell_ids = gmt_cells[gmt_cells[ixcol] == loc]
         lon, lat = c
         loc_lat.append(lat)
         loc_lon.append(lon)
 
-        dset = cdsets[gmtcell_id]
 
-        pr.append(dset[GRIDMET_PARAMS.index('pr')])
-        srad.append(dset[GRIDMET_PARAMS.index('srad')])
-        th.append(dset[GRIDMET_PARAMS.index('th')])
-        tmmn.append(dset[GRIDMET_PARAMS.index('tmmn')])
-        tmmx.append(dset[GRIDMET_PARAMS.index('tmmx')])
-        vs.append(dset[GRIDMET_PARAMS.index('vs')])
-        vpd.append(dset[GRIDMET_PARAMS.index('vpd')])
+        if len(gmtcell_ids.index) > 1:
+
+            prm = []
+            sradm = []
+            thm = []
+            tmmnm = []
+            tmmxm = []
+            vsm = []
+            vpdm = []
+
+            for cid in gmtcell_ids['cell_id']:
+                dset = cdsets[cid]
+
+                prm.append(dset[GRIDMET_PARAMS.index('pr')])
+                sradm.append(dset[GRIDMET_PARAMS.index('srad')])
+                thm.append(dset[GRIDMET_PARAMS.index('th')])
+                tmmnm.append(dset[GRIDMET_PARAMS.index('tmmn')])
+                tmmxm.append(dset[GRIDMET_PARAMS.index('tmmx')])
+                vsm.append(dset[GRIDMET_PARAMS.index('vs')])
+                vpdm.append(dset[GRIDMET_PARAMS.index('vpd')])
+
+            prm_d = pd.concat(prm)
+            sradm_d = pd.concat(sradm)
+            thm_d = pd.concat(thm)
+            tmmnm_d = pd.concat(tmmnm)
+            tmmxm_d = pd.concat(tmmxm)
+            vsm_d = pd.concat(vsm)
+            vpdm_d = pd.concat(vpdm)
+
+            pr.append(prm_d.groupby(prm_d.index).mean())
+            srad.append(sradm_d.groupby(sradm_d.index).mean())
+            th.append(thm_d.groupby(thm_d.index).mean())
+            tmmn.append(tmmnm_d.groupby(tmmnm_d.index).mean())
+            tmmx.append(tmmxm_d.groupby(tmmxm_d.index).mean())
+            vs.append(vsm_d.groupby(vsm_d.index).mean())
+            vpd.append(vpdm_d.groupby(vpdm_d.index).mean())
+
+        else:
+            dset = cdsets[gmtcell_ids['cell_id'].values[0]]
+            pr.append(dset[GRIDMET_PARAMS.index('pr')])
+            srad.append(dset[GRIDMET_PARAMS.index('srad')])
+            th.append(dset[GRIDMET_PARAMS.index('th')])
+            tmmn.append(dset[GRIDMET_PARAMS.index('tmmn')])
+            tmmx.append(dset[GRIDMET_PARAMS.index('tmmx')])
+            vs.append(dset[GRIDMET_PARAMS.index('vs')])
+            vpd.append(dset[GRIDMET_PARAMS.index('vpd')])
 
     xds = xr.Dataset(
         {

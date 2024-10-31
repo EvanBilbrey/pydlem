@@ -12,12 +12,13 @@ from config import GRIDMET_XRES
 from config import GRIDMET_YRES
 
 
-def get_gridmet_cells(pnts):
+def get_gridmet_cells(geom):
     """
     Gets the GridMET cells for each input coordinate point.
-    :param pnts: geopandas.GeoDataFrame that includes point geometries column and column of location ID's for each point
+    :param geom: geopandas.GeoDataFrame that includes point or polygon geometries column and
+        a column of location ID's for each point
     :return: geopandas.GeoDataFrame - product of spatial join between GridMET cells and points containing
-    GridMET cell ID's, input point ID's, and GridMET cell center point geometry column
+    GridMET cell ID's, input point ID's, and input geometry cell center point geometry column
     """
     nshp_cols =np.linspace(GRIDMET_BOUNDS[0], GRIDMET_BOUNDS[2], GRIDMET_NCOLS+1)
     nshp_rows = np.linspace(GRIDMET_BOUNDS[1], GRIDMET_BOUNDS[3], GRIDMET_NROWS+1)
@@ -36,7 +37,7 @@ def get_gridmet_cells(pnts):
         'geometry': gridmet_cells
     }, crs='EPSG:4326')
 
-    rslt = gmet_polys.sjoin(pnts, how="inner")
+    rslt = gmet_polys.sjoin(geom, how="inner")
 
     return rslt
 

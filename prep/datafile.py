@@ -105,7 +105,9 @@ class CreateInputFile:
         :param data: pd.Series, pd.DataFrame, xr.DataArray, xr.Dataset - pandas objects must be formatted with
         multiindex levels = [time, location] where location index matches those of the class.data object's location ids.
         Time must be datetime64[ns]. Can also be xarray object formatted identical to the class.data object.
-        :param variable_name: str - name to assign to new variable
+        :param variable_name: str - name to assign to new variable from available variables
+            ['precip', 'min_temp', 'max_temp', 'mean_temp' 'solrad', 'min_rh', 'max_rh', 'mean_rh', 'dew_temp',
+            'wind_dir', 'wind_vel', 'LakeArea', 'LakeDepth', 'vpd']
         :param var_attrs: dict or None(default) - dictionary of attributes and associated values for the new variable
         (usually at minimum includes 'standard_name' and 'units')
         :return: None - updates class data object with new variable
@@ -148,6 +150,8 @@ class CreateInputFile:
                 print("New variable added.")
         else:
             print("Data type is neither pandas Series or Dataframe, no variable loaded.")
+
+    #def add_coordinate(self, data, coordinate_name, var_attrs=None):
 
     # def format_variables(self,
     #                  precip=None,
