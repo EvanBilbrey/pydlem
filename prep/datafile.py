@@ -34,24 +34,32 @@ FETCH_METHODS = [
 class CreateInputFile:
     """
 
-    Takes list of coordinate tuples (x,y), location Id's for each pair of coordinates, and prepares an xarray
-    dataset for use in the pydlem model. Additional prep operations are needed, this just formats the
-    meteorology inputs.
+    Prepares/provides methods to prepare a xarray Dataset for use in the pydlem model based on input sites/locations
+    where the model will calculate lake evaporation (e.g., lake polygon layer in the form of a geopandas GeoDataFrame).
+    pydelm required inputs are meterology (see Penman documentation for which variables), lake area, and lake depth.
+    These datasets are required as input to format the datafile.
 
-    :param coords:
-    :param loc_ids:
-    :param start:
-    :param end:
-    :return:
+    :param geoms: geopandas.GeoDataFrame - geometries for which to compute evaporation estimates (point or polygon)
+    :param lake_area: pd.Series, pd.DataFrame, xr.DataArray, or xr.Dataset - lake area formatted as one of the accepted
+        variable formats. Must either contain multiindex with ['time', 'location'] or those coordinate dimensions
+        as xarray object. Can use methods from lakegeom.py module to help with this.
+    :param lake_depth: pd.Series, pd.DataFrame, xr.DataArray, or xr.Dataset - lake depth formatted as one of the accepted
+        variable formats. Must either contain multiindex with ['time', 'location'] or those coordinate dimensions
+        as xarray object. Can use methods from lakegeom.py module to help with this.
+    :param index_col: str or None(default) - defines the column name in geoms that will be used as the unique identifier for
+        each geometry location. None defaults to the GeoDataFrame index.
+    :param met_data: xarray.Dataset or None (default) - if Dataset is provided it is used to construct the input
+        datafile from file. If None, met_source must be provided to build initial input datafile.
+    :param met_source: str - from accepted sources ['gridmet', 'daymet', 'from_file']
+    :return: A formatted datafile class that contains necessary info to save a properly formatted pydelm input netcdf.
     """
-# TODO - don't have inputs for eac curves and those will be needed, -- add depth_method = ['static', 'dynamic'] --
-#   static requires constant storage value, dynamic requires eac-curve.
+
     def __init__(
             self,
             geoms: Union[gpd.GeoDataFrame, None],
-            index_col: Union[str, None],
-            lake_area: Union[np.array, pd.Series],
-            lake_depth: Union[np.array, pd.Series],
+            lake_area: Union[pd.Series, pd.DataFrame, xr.DataArray, xr.Dataset],
+            lake_depth: Union[pd.Series, pd.DataFrame, xr.DataArray, xr.Dataset],
+            index_col: Union[str, None] = None,
             met_data: Union[xr.Dataset, None] = None,
             met_source = 'gridmet'):
 
