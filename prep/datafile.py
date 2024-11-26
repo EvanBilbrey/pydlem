@@ -68,7 +68,7 @@ class CreateInputFile:
         self.add_variable(lake_depth, 'LakeDepth', var_attrs={'standard_name': 'Average Lake Depth', 'units': 'm'})
 
     def _create_metinputs(self,
-                          geoms: gpd.GeoDataFrame,
+                          geoms: Union[gpd.GeoDataFrame, None],
                           index_col: Union[str, None],
                           met_data: Union[xr.Dataset, None] = None,
                           met_source: str = 'gridmet') -> xr.Dataset:
@@ -114,18 +114,18 @@ class CreateInputFile:
         multiindex levels = [time, location] where location index matches those of the class.data object's location ids.
         Time must be datetime64[ns]. Can also be xarray object formatted identical to the class.data object.
         :param variable_name: str - name to assign to new variable from available variables
-            ['precip', 'min_temp', 'max_temp', 'mean_temp' 'solrad', 'min_rh', 'max_rh', 'mean_rh', 'dew_temp',
-            'wind_dir', 'wind_vel', 'LakeArea', 'LakeDepth', 'vpd']
+            ['precip', 'min_temp', 'max_temp', 'mean_temp', 'solrad', 'min_rh', 'max_rh', 'mean_rh', 'dew_temp',
+            'wind_dir', 'wind_vel', 'LakeArea', 'LakeDepth', 'vpd', lrad, 'ftch_len']
         :param var_attrs: dict or None(default) - dictionary of attributes and associated values for the new variable
         (usually at minimum includes 'standard_name' and 'units')
         :return: None - updates class data object with new variable
         """
-        accepted_vars = ['precip', 'min_temp', 'max_temp', 'mean_temp' 'solrad', 'min_rh', 'max_rh', 'mean_rh', 'dew_temp',
-         'wind_dir', 'wind_vel', 'LakeArea', 'LakeDepth', 'vpd']
+        accepted_vars = ['precip', 'min_temp', 'max_temp', 'mean_temp', 'solrad', 'min_rh', 'max_rh', 'mean_rh', 'dew_temp',
+         'wind_dir', 'wind_vel', 'LakeArea', 'LakeDepth', 'vpd', 'lrad', 'ftch_len']
         if variable_name not in accepted_vars:
             raise ValueError("Variable name not compatible, select from: ['precip', 'min_temp', 'max_temp',"
-                             " 'mean_temp' 'solrad', 'min_rh', 'max_rh', 'mean_rh', 'dew_temp','wind_dir',"
-                             " 'wind_vel', 'LakeArea', 'LakeDepth', 'vpd']")
+                             " 'mean_temp', 'solrad', 'min_rh', 'max_rh', 'mean_rh', 'dew_temp','wind_dir',"
+                             " 'wind_vel', 'LakeArea', 'LakeDepth', 'vpd', lrad, 'ftch_len']")
 
         if isinstance(data, pd.DataFrame):
             data.index.names = ['time', 'location']
@@ -188,16 +188,16 @@ class CreateInputFile:
 
 
 def check_format(xrdset):
-    vars = [x for x in INPUT_VARS if x not in list(xrdset.data_vars)]
+    in_vars = [x for x in INPUT_VARS if x not in list(xrdset.data_vars)]
     coords = [x for x in DSET_COORDS if x not in list(xrdset.coords)]
-    if len(vars) != 0:
-        warnings.warn("There are missing or mislabeled variables in the dataset. See the following:")
-        print("MISSING VARIABLES", *vars, sep='\n')
+    if len(in_vars) != 0:
+        warnings.warn("There are missing or mislabeled variables in the dataset. See the following:", UserWarning)
+        print("MISSING VARIABLES", *in_vars, sep='\n')
     else:
         print("All necessary variables exist and are labeled properly.")
 
     if len(coords) != 0:
-        warnings.warn("There are missing or mislabeled coordinates in the dataset. See the following:")
+        warnings.warn("There are missing or mislabeled coordinates in the dataset. See the following:", UserWarning)
         print("MISSING COORDINATES", *coords, sep='\n')
     else:
         print("All necessary coordinates exist and are labeled properly")
