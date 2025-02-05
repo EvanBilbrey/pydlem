@@ -1,10 +1,10 @@
+
 from pathlib import Path
 import xarray as xr
 import warnings
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from tqdm import tqdm
-
 
 from dlem.functions import latent_heat_vaporization, psychrometric_const, altitude_adjusted_atmp
 from dlem.functions import calc_slope_swv_curve, cloud_factor
@@ -134,10 +134,11 @@ class CreateModel:
         ierr = np.where(es <= vpd, 6, ierr)
         vpd = xr.where(es <= vpd, es * 0.99, vpd)
         ea = es - vpd
-
+        # p=100=pressure of station
+        atmp = altitude_adjusted_atmp(ta, ta.elev.values[None, :])
         t_d = (116.9 + 237.3 * np.log(ea)) / (16.78 - np.log(ea))
-        twb = (0.00066 * 100. * ta + 4098. * (ea) / np.power(t_d + 237.3, 2) * t_d) \
-              / (0.00066 * 100. + 4098. * (ea) / np.power(t_d + 237.3, 2.))
+        twb = (0.00066 * atmp * ta + 4098. * (ea) / np.power(t_d + 237.3, 2) * t_d) \
+              / (0.00066 * atmp + 4098. * (ea) / np.power(t_d + 237.3, 2.))
         ierr = np.where(twb > ta, 7, ierr)
         twb = xr.where(twb > ta, ta, twb)
 
@@ -149,7 +150,7 @@ class CreateModel:
 
         # some variables
         alambda = latent_heat_vaporization(ta)
-        atmp = altitude_adjusted_atmp(ta, ta.elev.values[None, :])
+        # atmp = altitude_adjusted_atmp(ta, ta.elev.values[None, :])
         gamma = psychrometric_const(atmp, alambda)
         # airds = airdens(ta, elev)
 
