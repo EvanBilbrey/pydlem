@@ -61,7 +61,7 @@ class CreateInputFile:
             lake_depth: Union[pd.Series, pd.DataFrame, xr.DataArray, xr.Dataset],
             index_col: Union[str, None] = None,
             met_data: Union[xr.Dataset, None] = None,
-            met_source = 'gridmet'):
+            met_source='gridmet'):
 
         self.data = self._create_metinputs(geoms, index_col, met_data, met_source)
         self.add_variable(lake_area, "LakeArea", var_attrs={'standard_name': 'Lake Surface Area', 'units': 'km^2'})
@@ -73,7 +73,7 @@ class CreateInputFile:
                           met_data: Union[xr.Dataset, None] = None,
                           met_source: str = 'gridmet') -> xr.Dataset:
         """
-        Functin to format a .netcdf meteorology file for input into pydlem.
+        Function to format a .netcdf meteorology file for input into pydlem.
         __________________
 
         Valid met_source = ['gridmet', 'daymet', 'from_file']
@@ -222,6 +222,86 @@ def check_format(xrdset):
 #     dlem_inputs = ['precip', 'mean_temp', 'solrad', 'lrad', 'vpd', 'wind_vel', 'LakeArea', 'LakeDepth', 'ftch_len',
 #                    'location', 'lat', 'long', 'elev', 'time']
 
+
+def prep_precip(met_data):
+    """
+    Function to create a xr.DataArray for precipitation as a length from xr.Dataset with precipitation as volume.
+    :param met_data: xarray.Dataset - Pre-formatted as discrete with dims (time, location) for each variable. Must also
+     contain coordinate "area" and data variable "precip_volume" with units in m^2.
+    :return: xarray.DataArray - precipitation data with units of length (mm)
+    """
+    # divide precip volume(m^3) by lake area (converted from km^2 to m^2). Returns precip (m)
+    precip_arr = met_data.precip_volume.values / (np.tile(met_data.area.values, (len(met_data.time), 1)) * (1000**2))
+    precip_arr = precip_arr * 1000  # convert from m to mm
+    precip_xda = xr.DataArray(precip_arr, coords=met_data.precip_volume.coords,
+                              attrs={'standard_name': 'Precipitation', 'units': 'mm'})
+    precip_xda.name = 'precip'
+
+    return precip_xda
+
+
+def prep_lakearea(met_data):
+    """
+    Function to format lake area variable into array shape accepted by DLEM model.
+    :param met_data: xarray.Dataset - Pre-formatted as discrete with dims (time, location) for each variable. Must also
+     contain coordinate "area" with units in km^2.
+    :return: xarray.DataArray - lake area with array dimensions equal to met_data data variable shape
+    """
+    lareas_arr = np.tile(met_data.coords['area'], (len(met_data.time + 1), 1))
+    lake_area_xda = xr.DataArray(lareas_arr, coords=met_data.coords,
+                                 attrs={'standard_name': 'Lake Surface Area', 'units': 'km^2'})
+    lake_area_xda.name = 'LakeArea'
+
+    return lake_area_xda
+
+def prep_lakedepth(met_data, gdf, gdf_index_col, gdf_depth_col):
+    """
+    Function to format lake depth variable into array shape accepted by DLEM model.
+    :param met_data: xarray.Dataset - Pre-formatted as discrete with dims (time, location) for each variable.
+    :param gdf: geopandas.GeoDataFrame - contains depth data
+    :param gdf_index_col: str - name of column in GeoDataFrame to use as a unique identifier for each geometry
+    :param gdf_index_col: str - name of column in GeoDataFrame with depth value of each geometry. Units are in m
+    :return: xarray.DataArray - lake depth with array dimensions equal to met_data data variable shape
+    """
+    ldpth = np.array([gdf[gdf[gdf_index_col] == x][gdf_depth_col]
+                     .iloc[0] for x in met_data.location.values.astype(str)])
+    ldpth_arr = np.tile(ldpth, (len(met_data.time + 1), 1))
+    lake_depth_arr = xr.DataArray(ldpth_arr, coords=met_data.coords,
+                                  attrs={'standard_name': 'Lake Depth', 'units': 'm'})
+    lake_depth_arr.name = 'LakeDepth'
+
+    return lake_depth_arr
+
+def prep_fetch(met_data, gdf, gdf_index_col):
+    """
+    Function to calculate and format fetch length variable into array shape accepted by DLEM model.
+    :param met_data: xarray.Dataset - Pre-formatted as discrete with dims (time, location) for each variable. Must also
+     contain coordinate the data variables "wind_dir" and "LakeArea".
+    :return: xarray.DataArray - fetch length with array dimensions equal to met_data data variable shape
+    """
+    # assign necessary variables and complete any conversions
+    rows = met_data.wind_dir.shape[0]
+    cols = met_data.wind_dir.shape[1]
+    wnd_d = met_data.wind_dir.values
+    lk_a = met_data.LakeArea.values * 1000.0**2
+
+    # loop through data arrays of wind direction for each timestamp(x) and location(y)
+    resvs = gdf.to_crs(gdf.estimate_utm_crs())
+    xs = []
+    for x in range(0, rows):
+        ys = []
+        for y in range(0, cols):
+            gmtry = resvs.loc[resvs[gdf_index_col] == met_data.location[0].values.astype(str)].geometry
+            wnd = wnd_d[x, y]
+            a = lk_a[x, y]
+            ftchl = calc_fetch_length(gmtry, wnd, a)
+            ys.append(ftchl)
+        xs.append(ys)
+    # create xarray DataArray from the resulting ndarray
+    flen = np.array(xs)
+    flen = xr.DataArray(flen, coords=met_data.coords, attrs={'standard_name': 'Wind Fetch Length', 'units': 'm'})
+
+    return flen
 
 # Default behavior create input datafile from gridmet given static reservoir variables and gridmet POR
 if __name__ == '__main__':
