@@ -33,10 +33,9 @@ FETCH_METHODS = [
 
 class CreateInputFile:
     """
-
     Prepares/provides methods to prepare a xarray Dataset for use in the pydlem model based on input sites/locations
     where the model will calculate lake evaporation (e.g., lake polygon layer in the form of a geopandas GeoDataFrame).
-    pydelm required inputs are meterology (see Penman documentation for which variables), lake area, and lake depth.
+    pydelm required inputs are meteorology (see Penman documentation for which variables), lake area, and lake depth.
     These datasets are required as input to format the datafile.
 
     :param geoms: geopandas.GeoDataFrame - geometries for which to compute evaporation estimates (point or polygon)
@@ -188,6 +187,10 @@ class CreateInputFile:
 
 
 def check_format(xrdset):
+    """
+    :param xrdset: xarray.Dataset - meteorological and lake geometry data formatted to create model for dlem
+    :return str - review of xrdset for compatibility with dlem CreateModel class
+    """
     vars = [x for x in INPUT_VARS if x not in list(xrdset.data_vars)]
     coords = [x for x in DSET_COORDS if x not in list(xrdset.coords)]
     if len(vars) != 0:
@@ -260,9 +263,11 @@ def prep_lakedepth(met_data, gdf, gdf_index_col, gdf_depth_col):
     :param met_data: xarray.Dataset - Pre-formatted as discrete with dims (time, location) for each variable.
     :param gdf: geopandas.GeoDataFrame - contains depth data
     :param gdf_index_col: str - name of column in GeoDataFrame to use as a unique identifier for each geometry
-    :param gdf_index_col: str - name of column in GeoDataFrame with depth value of each geometry. Units are in m
+    :param gdf_depth_col: str - name of column in GeoDataFrame with depth value of each geometry. Units are in m
     :return: xarray.DataArray - lake depth with array dimensions equal to met_data data variable shape
     """
+    gdf[gdf_index_col] = gdf[gdf_index_col].astype(str)
+
     ldpth = np.array([gdf[gdf[gdf_index_col] == x][gdf_depth_col]
                      .iloc[0] for x in met_data.location.values.astype(str)])
     ldpth_arr = np.tile(ldpth, (len(met_data.time + 1), 1))
