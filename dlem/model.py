@@ -74,32 +74,32 @@ class CreateModel:
         if np.count_nonzero(depth_nan) > 0:
             warnings.warn(
                 "There are missing LAKE DEPTH values for the run time period, missing "
-                "values will be propogated to the model outputs.")
+                "values will be propagated to the model outputs.")
         area_nan = np.isnan(area)
         if np.count_nonzero(area_nan) > 0:
             warnings.warn(
                 "There are missing LAKE AREA values for the run time period, missing "
-                "values will be propogated to the model outputs.")
+                "values will be propagated to the model outputs.")
         fch_nan = np.isnan(fch)
         if np.count_nonzero(fch_nan) > 0:
             warnings.warn(
                 "There are missing FETCH values for the run time period, missing "
-                "values will be propogated to the model outputs.")
+                "values will be propagated to the model outputs.")
         ut_nan = np.isnan(ut)
         if np.count_nonzero(ut_nan) > 0:
             warnings.warn(
                 "There are missing WIND SPEED values for the run time period, missing "
-                "values will be propogated to the model outputs.")
+                "values will be propagated to the model outputs.")
         vpd_nan = np.isnan(vpd)
         if np.count_nonzero(vpd_nan) > 0:
             warnings.warn(
                 "There are missing VAPOR PRESSURE DEFICIT values for the run time period, missing "
-                "values will be propogated to the model outputs.")
+                "values will be propagated to the model outputs.")
         srad_nan = np.isnan(srad)
         if np.count_nonzero(srad_nan) > 0:
             warnings.warn(
                 "There are missing SHORTWAVE RADIATION values for the run time period, missing "
-                "values will be propogated to the model outputs.")
+                "values will be propagated to the model outputs.")
         lat_nan = np.isnan(lat)
         if np.count_nonzero(lat_nan) > 0:
             warnings.warn(
@@ -158,7 +158,7 @@ class CreateModel:
         deltaa = calc_slope_swv_curve(ta)
         deltawb = calc_slope_swv_curve(twb)
 
-        # Emissvity of air and water (unitless)
+        # Emissivity of air and water (unitless)
         sradj = srad * 0.0864  # convert from W m-2 to MJ m-2 d-1
 
         fcd = cloud_factor(sradj, lat, elev)
