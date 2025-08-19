@@ -263,7 +263,7 @@ def get_gridmet_for_polygons(in_geom,
     area_df = area_df.reindex(in_geom_repro.geometry.values)
 
     coords = list(zip(pd.Series(lon_df[0].values), pd.Series(lat_df[0].values)))
-    elev_df = pd.DataFrame(py3dep.elevation_bycoords(coords, crs=crs)).set_index(in_geom.geometry)
+    elev_df = pd.DataFrame([py3dep.elevation_bycoords(coords, crs=crs)]).set_index(in_geom.geometry)
 
     xds = xr.Dataset(
         {
