@@ -215,7 +215,6 @@ def get_gridmet_for_polygons(in_geom,
     :param crs: int or str - EPSG code for crs, default is 4326
     :return: a xarray dataset for discrete locations (stations)
     """
-
     # Set CRS of polygons for GridMet and exactextract, respectively
     in_geom = in_geom.to_crs(crs)
     in_geom_repro = in_geom.to_crs(5071)
